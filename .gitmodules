@@ -1,0 +1,3 @@
+[submodule "JCMLib"]
+	path = JCMLib
+	url = https://github.com/JnCrMx/JCMLib
