@@ -1,7 +1,7 @@
 apply plugin: 'java'
 apply plugin: 'application'
 
-mainClassName = 'de.jcm.tmod.editor.TModExplorer'
+mainClassName = 'de.jcm.tmod.explorer.TModExplorer'
 version = '1.0'
 
 repositories
