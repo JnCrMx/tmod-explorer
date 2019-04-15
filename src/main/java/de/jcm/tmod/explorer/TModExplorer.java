@@ -1,4 +1,4 @@
-package de.jcm.tmod.editor;
+package de.jcm.tmod.explorer;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -7,11 +7,14 @@ import java.awt.Desktop;
 import java.awt.EventQueue;
 import java.awt.FlowLayout;
 import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowFocusListener;
+import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferByte;
+import java.awt.image.Raster;
+import java.awt.image.WritableRaster;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
@@ -34,6 +37,9 @@ import java.util.zip.DeflaterOutputStream;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
+import javax.imageio.ImageIO;
+import javax.swing.AbstractAction;
+import javax.swing.Action;
 import javax.swing.BoxLayout;
 import javax.swing.GroupLayout;
 import javax.swing.GroupLayout.Alignment;
@@ -104,6 +110,377 @@ public class TModExplorer extends JFrame
 	private JTextField mversionField;
 
 	private JTree tree;
+
+	private final Action saveAsAction = new AbstractAction("Save as...", UIManager.getIcon("FileView.floppyDriveIcon"))
+	{
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public void actionPerformed(ActionEvent e)
+		{
+			JFileChooser chooser = new JFileChooser(
+					new File(System.getProperty("user.home") + "/Documents/My Games/Terraria/ModLoader/Mods"));
+			FileFilter filter;
+			chooser.addChoosableFileFilter(filter = new FileFilter()
+			{
+				@Override
+				public String getDescription()
+				{
+					return "Terraria Mod (*.tmod)";
+				}
+
+				@Override
+				public boolean accept(File f)
+				{
+					return f.getName().endsWith(".tmod") || f.isDirectory();
+				}
+			});
+			int result = chooser.showSaveDialog(null);
+			if(result == JFileChooser.APPROVE_OPTION)
+			{
+				File target = chooser.getSelectedFile();
+				if(chooser.getFileFilter() == filter)
+				{
+					if(!target.getName().endsWith(".tmod"))
+					{
+						target = new File(target.getAbsolutePath() + ".tmod");
+					}
+				}
+
+				try
+				{
+					write(target);
+				}
+				catch(IOException e1)
+				{
+					e1.printStackTrace();
+				}
+			}
+		}
+	};
+	private final Action openAction = new AbstractAction("Open", UIManager.getIcon("FileView.directoryIcon"))
+	{
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public void actionPerformed(ActionEvent e)
+		{
+			main(new String[0]);
+		}
+	};
+	private final Action extractAllAction = new AbstractAction("Extract all...", UIManager.getIcon("FileChooser.upFolderIcon"))
+	{
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public void actionPerformed(ActionEvent e)
+		{
+			JFileChooser chooser = new JFileChooser();
+			chooser.setFileFilter(new FileFilter()
+			{
+
+				@Override
+				public String getDescription()
+				{
+					return "Directory";
+				}
+
+				@Override
+				public boolean accept(File f)
+				{
+					return f.isDirectory();
+				}
+			});
+			chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+			int result = chooser.showSaveDialog(null);
+			if(result == JFileChooser.APPROVE_OPTION)
+			{
+				File root = chooser.getSelectedFile();
+
+				for(int i = 0; i < files.size(); i++)
+				{
+					try
+					{
+						TFile file = files.get(i);
+						File target = new File(root, file.path);
+						target.getParentFile().mkdirs();
+
+						BufferedInputStream in = createTFileInputStream(file);
+						BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(target));
+
+						byte[] buffer = new byte[1024];
+						for(int j = 0; j < file.size - 1023; j += 1024)
+						{
+							int read = in.read(buffer);
+							out.write(buffer, 0, read);
+						}
+						buffer = new byte[file.size % 1024];
+						in.read(buffer);
+						out.write(buffer);
+
+						in.close();
+						out.close();
+					}
+					catch(IOException e1)
+					{
+						e1.printStackTrace();
+					}
+				}
+			}
+		}
+	};
+	private final Action extractFileAction = new AbstractAction("Extract file...", UIManager.getIcon("FileChooser.upFolderIcon"))
+	{
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public void actionPerformed(ActionEvent e)
+		{
+			if(tree.getSelectionPath() != null)
+			{
+				Stream<Object> treePath = Arrays.stream(tree.getSelectionPath().getPath());
+				String path = treePath.collect(Collector.of(() -> new StringBuilder(), (a, b) ->
+				{
+					if(!((DefaultMutableTreeNode) b).getUserObject().equals(modname))
+					{
+						if(((DefaultMutableTreeNode) b).getChildCount() == 0)
+							a.append(((DefaultMutableTreeNode) b).getUserObject());
+						else
+							a.append(((DefaultMutableTreeNode) b).getUserObject() + "/");
+					}
+				}, (a, b) -> a.append(b), StringBuilder::toString));
+				if(!path.isBlank())
+				{
+					Stream<TFile> files = TModExplorer.this.files.stream();
+					TFile file = files.reduce((a, b) -> b.path.equals(path) ? b : a)
+							.filter(f -> f != null && f.path.equals(path)).orElse(null);
+					if(file != null)
+					{
+						JFileChooser chooser = new JFileChooser();
+						chooser.setSelectedFile(new File(file.path));
+						int result = chooser.showSaveDialog(null);
+						if(result == JFileChooser.APPROVE_OPTION)
+						{
+							try
+							{
+								File target = chooser.getSelectedFile();
+
+								BufferedInputStream in = createTFileInputStream(file);
+								FileOutputStream out = new FileOutputStream(target);
+
+								byte[] buffer = new byte[1024];
+								for(int j = 0; j < file.size - 1023; j += 1024)
+								{
+									int read = in.read(buffer);
+									out.write(buffer, 0, read);
+								}
+								buffer = new byte[file.size % 1024];
+								in.read(buffer);
+								out.write(buffer);
+
+								out.close();
+								in.close();
+							}
+							catch(IOException e1)
+							{
+								e1.printStackTrace();
+							}
+						}
+					}
+				}
+			}
+		}
+	};
+	private final Action addFileAction = new AbstractAction("Add file...")
+	{
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public void actionPerformed(ActionEvent e)
+		{
+			JFileChooser chooser = new JFileChooser();
+			int result = chooser.showOpenDialog(null);
+			if(result == JFileChooser.APPROVE_OPTION)
+			{
+				File file = chooser.getSelectedFile();
+				if(file.isFile())
+				{
+					addFile(file);
+				}
+			}
+		}
+	};
+	private final Action removeFileAction = new AbstractAction("Remove file")
+	{
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public void actionPerformed(ActionEvent e)
+		{
+			if(tree.getSelectionPath() != null)
+			{
+				Stream<Object> treePath = Arrays.stream(tree.getSelectionPath().getPath());
+				String path = treePath.collect(Collector.of(() -> new StringBuilder(), (a, b) ->
+				{
+					if(!((DefaultMutableTreeNode) b).getUserObject().equals(modname))
+					{
+						if(((DefaultMutableTreeNode) b).getChildCount() == 0)
+							a.append(((DefaultMutableTreeNode) b).getUserObject());
+						else
+							a.append(((DefaultMutableTreeNode) b).getUserObject() + "/");
+					}
+				}, (a, b) -> a.append(b), StringBuilder::toString));
+				if(!path.isBlank())
+				{
+					Stream<TFile> files = TModExplorer.this.files.stream();
+					TFile file = files.reduce((a, b) -> b.path.equals(path) ? b : a)
+							.filter(f -> f != null && f.path.equals(path)).orElse(null);
+					if(file != null)
+					{
+						if(file.state == TState.ORIGINAL || file.state == TState.CHANGED)
+						{
+							file.state = TState.REMOVED;
+						}
+						else if(file.state == TState.ADDED)
+						{
+							TModExplorer.this.files.remove(file);
+							rebuildTree();
+						}
+					}
+				}
+			}
+		}
+	};
+	private final Action restoreFileAction = new AbstractAction("Restore file")
+	{
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public void actionPerformed(ActionEvent e)
+		{
+			if(tree.getSelectionPath() != null)
+			{
+				Stream<Object> treePath = Arrays.stream(tree.getSelectionPath().getPath());
+				String path = treePath.collect(Collector.of(() -> new StringBuilder(), (a, b) ->
+				{
+					if(!((DefaultMutableTreeNode) b).getUserObject().equals(modname))
+					{
+						if(((DefaultMutableTreeNode) b).getChildCount() == 0)
+							a.append(((DefaultMutableTreeNode) b).getUserObject());
+						else
+							a.append(((DefaultMutableTreeNode) b).getUserObject() + "/");
+					}
+				}, (a, b) -> a.append(b), StringBuilder::toString));
+				if(!path.isBlank())
+				{
+					Stream<TFile> files = TModExplorer.this.files.stream();
+					TFile file = files.reduce((a, b) -> b.path.equals(path) ? b : a)
+							.filter(f -> f != null && f.path.equals(path)).orElse(null);
+					if(file != null)
+					{
+						if(file.state == TState.CHANGED)
+						{
+							file.state = TState.ORIGINAL;
+							editFiles.remove(file);
+						}
+						else if(file.state == TState.REMOVED)
+						{
+							if(editFiles.containsKey(file))
+							{
+								if(editFiles.get(file).lastModified() > 0)
+								{
+									file.state = TState.CHANGED;
+								}
+								else
+								{
+									file.state = TState.ORIGINAL;
+								}
+							}
+							else
+							{
+								file.state = TState.ORIGINAL;
+							}
+						}
+					}
+				}
+			}
+		}
+	};
+	private final Action importImageAction = new AbstractAction("Import image...")
+	{
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public void actionPerformed(ActionEvent e)
+		{
+			JFileChooser chooser = new JFileChooser();
+			chooser.addChoosableFileFilter(new FileFilter()
+			{
+
+				@Override
+				public String getDescription()
+				{
+					return "Supported images (*.png, *.jpg)";
+				}
+
+				@Override
+				public boolean accept(File f)
+				{
+					return f.isDirectory() || f.getName().endsWith(".png") || f.getName().endsWith(".jpg");
+				}
+			});
+			int result = chooser.showOpenDialog(null);
+			if(result == JFileChooser.APPROVE_OPTION)
+			{
+				File file = chooser.getSelectedFile();
+				if(file.isFile())
+				{
+					try
+					{
+						BufferedImage image1 = ImageIO.read(file);
+
+						File target = File.createTempFile("tmod_rawimg_" + file.getName(), ".rawimg");
+
+						int width = image1.getWidth();
+						int height = image1.getHeight();
+
+						int samplesPerPixel = 4; // This is the *4BYTE* in
+													// TYPE_4BYTE_ABGR
+						int[] bandOffsets = { 0, 1, 2, 3 }; // This is the order
+															// (ABGR) part in
+															// TYPE_4BYTE_ABGR
+
+						DataBufferByte buffer = new DataBufferByte(width * height * 4);
+						WritableRaster raster = Raster.createInterleavedRaster(buffer, width, height,
+								samplesPerPixel * width, samplesPerPixel, bandOffsets, null);
+
+						image1.copyData(raster);
+
+						String name = file.getName();
+						name = name.replace(".png", ".rawimg");
+						name = name.replace(".jpg", ".rawimg");
+
+						FileOutputStream fout = new FileOutputStream(target);
+						LittleEndianDataOutputStream out = new LittleEndianDataOutputStream(fout);
+
+						out.writeInt(1);
+						out.writeInt(width);
+						out.writeInt(height);
+
+						out.write(buffer.getData());
+
+						out.close();
+
+						addFile(target, name);
+					}
+					catch(IOException e1)
+					{
+						e1.printStackTrace();
+					}
+				}
+			}
+		}
+	};
 
 	/**
 	 * Launch the application.
@@ -350,6 +727,45 @@ public class TModExplorer extends JFrame
 		return in;
 	}
 
+	public void addFile(File file, String name)
+	{
+		String path = name;
+		if(tree.getSelectionPath() != null)
+		{
+			Stream<Object> treePath = Arrays.stream(tree.getSelectionPath().getPath());
+			String parent = treePath.collect(Collector.of(() -> new StringBuilder(), (a, b) ->
+			{
+				if(!((DefaultMutableTreeNode) b).getUserObject().equals(modname))
+				{
+					if(((DefaultMutableTreeNode) b).getChildCount() == 0)
+						a.append(((DefaultMutableTreeNode) b).getUserObject());
+					else
+						a.append(((DefaultMutableTreeNode) b).getUserObject() + "/");
+				}
+			}, (a, b) -> a.append(b), StringBuilder::toString));
+
+			if(parent.contains("/"))
+			{
+				path = parent.substring(0, parent.lastIndexOf("/") + 1) + path;
+			}
+		}
+
+		TFile tf = new TFile();
+		tf.size = (int) file.length();
+		tf.path = path;
+		tf.state = TState.ADDED;
+
+		files.add(tf);
+		editFiles.put(tf, file);
+
+		rebuildTree();
+	}
+
+	public void addFile(File file)
+	{
+		addFile(file, file.getName());
+	}
+
 	/**
 	 * Create the frame.
 	 */
@@ -374,262 +790,36 @@ public class TModExplorer extends JFrame
 		JMenu mnFile = new JMenu("File");
 		menuBar.add(mnFile);
 
-		JMenuItem mntmOpen = new JMenuItem("Open...");
-		mntmOpen.addActionListener(new ActionListener()
-		{
-			public void actionPerformed(ActionEvent e)
-			{
-				main(new String[0]);
-			}
-		});
+		JMenuItem mntmOpen = new JMenuItem(openAction);
 		mnFile.add(mntmOpen);
 
-		JMenuItem mntmSaveAs = new JMenuItem("Save as...");
-		mntmSaveAs.addActionListener(new ActionListener()
-		{
-			public void actionPerformed(ActionEvent e)
-			{
-				JFileChooser chooser = new JFileChooser(
-						new File(System.getProperty("user.home") + "/Documents/My Games/Terraria/ModLoader/Mods"));
-				FileFilter filter;
-				chooser.addChoosableFileFilter(filter = new FileFilter()
-				{
-					@Override
-					public String getDescription()
-					{
-						return "Terraria Mod (*.tmod)";
-					}
-
-					@Override
-					public boolean accept(File f)
-					{
-						return f.getName().endsWith(".tmod") || f.isDirectory();
-					}
-				});
-				int result = chooser.showSaveDialog(null);
-				if(result == JFileChooser.APPROVE_OPTION)
-				{
-					File target = chooser.getSelectedFile();
-					if(chooser.getFileFilter() == filter)
-					{
-						if(!target.getName().endsWith(".tmod"))
-						{
-							target = new File(target.getAbsolutePath() + ".tmod");
-						}
-					}
-
-					try
-					{
-						write(target);
-					}
-					catch(IOException e1)
-					{
-						e1.printStackTrace();
-					}
-				}
-			}
-		});
+		JMenuItem mntmSaveAs = new JMenuItem(saveAsAction);
 		mnFile.add(mntmSaveAs);
 
-		JMenuItem mntmExtract = new JMenuItem("Extract...");
-		mntmExtract.addActionListener(new ActionListener()
-		{
-			public void actionPerformed(ActionEvent e)
-			{
-				JFileChooser chooser = new JFileChooser();
-				chooser.setFileFilter(new FileFilter()
-				{
-
-					@Override
-					public String getDescription()
-					{
-						return "Directory";
-					}
-
-					@Override
-					public boolean accept(File f)
-					{
-						return f.isDirectory();
-					}
-				});
-				chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-				int result = chooser.showSaveDialog(null);
-				if(result == JFileChooser.APPROVE_OPTION)
-				{
-					File root = chooser.getSelectedFile();
-
-					for(int i = 0; i < files.size(); i++)
-					{
-						try
-						{
-							TFile file = files.get(i);
-							File target = new File(root, file.path);
-							target.getParentFile().mkdirs();
-
-							BufferedInputStream in = createTFileInputStream(file);
-							BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(target));
-
-							byte[] buffer = new byte[1024];
-							for(int j = 0; j < file.size - 1023; j += 1024)
-							{
-								int read = in.read(buffer);
-								out.write(buffer, 0, read);
-							}
-							buffer = new byte[file.size % 1024];
-							in.read(buffer);
-							out.write(buffer);
-
-							in.close();
-							out.close();
-						}
-						catch(IOException e1)
-						{
-							e1.printStackTrace();
-						}
-					}
-				}
-			}
-		});
+		JMenuItem mntmExtract = new JMenuItem(extractAllAction);
 		mnFile.add(mntmExtract);
+
+		JMenuItem mntmExtractFile = new JMenuItem(extractFileAction);
+		mnFile.add(mntmExtractFile);
 
 		JMenu mnEdit = new JMenu("Edit");
 		menuBar.add(mnEdit);
 
-		JMenuItem mntmAddFile = new JMenuItem("Add file...");
-		mntmAddFile.addActionListener(new ActionListener()
-		{
-			public void actionPerformed(ActionEvent e)
-			{
-				JFileChooser chooser = new JFileChooser();
-				int result = chooser.showOpenDialog(null);
-				if(result == JFileChooser.APPROVE_OPTION)
-				{
-					File file = chooser.getSelectedFile();
-					if(file.isFile())
-					{
-						String path = file.getName();
-						if(tree.getSelectionPath() != null)
-						{
-							Stream<Object> treePath = Arrays.stream(tree.getSelectionPath().getPath());
-							String parent = treePath.collect(Collector.of(() -> new StringBuilder(), (a, b) ->
-							{
-								if(!((DefaultMutableTreeNode) b).getUserObject().equals(modname))
-								{
-									if(((DefaultMutableTreeNode) b).getChildCount() == 0)
-										a.append(((DefaultMutableTreeNode) b).getUserObject());
-									else
-										a.append(((DefaultMutableTreeNode) b).getUserObject() + "/");
-								}
-							}, (a, b) -> a.append(b), StringBuilder::toString));
-
-							if(parent.contains("/"))
-							{
-								path = parent.substring(0, parent.lastIndexOf("/") + 1) + path;
-							}
-						}
-
-						TFile tf = new TFile();
-						tf.size = (int) file.length();
-						tf.path = path;
-						tf.state = TState.ADDED;
-
-						files.add(tf);
-						editFiles.put(tf, file);
-
-						rebuildTree();
-					}
-				}
-			}
-		});
+		JMenuItem mntmAddFile = new JMenuItem(addFileAction);
 		mnEdit.add(mntmAddFile);
 
-		JMenuItem mntmRemoveFile = new JMenuItem("Remove file");
-		mntmRemoveFile.addActionListener(new ActionListener()
-		{
-			public void actionPerformed(ActionEvent e)
-			{
-				if(tree.getSelectionPath() != null)
-				{
-					Stream<Object> treePath = Arrays.stream(tree.getSelectionPath().getPath());
-					String path = treePath.collect(Collector.of(() -> new StringBuilder(), (a, b) ->
-					{
-						if(!((DefaultMutableTreeNode) b).getUserObject().equals(modname))
-						{
-							if(((DefaultMutableTreeNode) b).getChildCount() == 0)
-								a.append(((DefaultMutableTreeNode) b).getUserObject());
-							else
-								a.append(((DefaultMutableTreeNode) b).getUserObject() + "/");
-						}
-					}, (a, b) -> a.append(b), StringBuilder::toString));
-					if(!path.isBlank())
-					{
-						Stream<TFile> files = TModExplorer.this.files.stream();
-						TFile file = files.reduce((a, b) -> b.path.equals(path) ? b : a)
-								.filter(f -> f != null && f.path.equals(path)).orElse(null);
-						if(file != null)
-						{
-							if(file.state == TState.ORIGINAL || file.state == TState.CHANGED)
-							{
-								file.state = TState.REMOVED;
-							}
-							else if(file.state == TState.ADDED)
-							{
-								TModExplorer.this.files.remove(file);
-							}
-						}
-					}
-				}
-			}
-		});
+		JMenuItem mntmRemoveFile = new JMenuItem(removeFileAction);
 		mnEdit.add(mntmRemoveFile);
 
-		JMenuItem mntmRestoreFile = new JMenuItem("Restore file");
-		mntmRestoreFile.addActionListener(new ActionListener()
-		{
-			public void actionPerformed(ActionEvent e)
-			{
-				if(tree.getSelectionPath() != null)
-				{
-					Stream<Object> treePath = Arrays.stream(tree.getSelectionPath().getPath());
-					String path = treePath.collect(Collector.of(() -> new StringBuilder(), (a, b) ->
-					{
-						if(!((DefaultMutableTreeNode) b).getUserObject().equals(modname))
-						{
-							if(((DefaultMutableTreeNode) b).getChildCount() == 0)
-								a.append(((DefaultMutableTreeNode) b).getUserObject());
-							else
-								a.append(((DefaultMutableTreeNode) b).getUserObject() + "/");
-						}
-					}, (a, b) -> a.append(b), StringBuilder::toString));
-					if(!path.isBlank())
-					{
-						Stream<TFile> files = TModExplorer.this.files.stream();
-						TFile file = files.reduce((a, b) -> b.path.equals(path) ? b : a)
-								.filter(f -> f != null && f.path.equals(path)).orElse(null);
-						if(file != null)
-						{
-							if(file.state == TState.CHANGED)
-							{
-								file.state = TState.ORIGINAL;
-								editFiles.remove(file);
-							}
-							else if(file.state == TState.REMOVED)
-							{
-								if(editFiles.containsKey(file))
-								{
-									file.state = TState.CHANGED;
-								}
-								else
-								{
-									file.state = TState.ORIGINAL;
-								}
-							}
-						}
-					}
-				}
-			}
-		});
+		JMenuItem mntmRestoreFile = new JMenuItem(restoreFileAction);
 		mnEdit.add(mntmRestoreFile);
+
+		JMenu mnTools = new JMenu("Tools");
+		menuBar.add(mnTools);
+
+		JMenuItem mntmImportImage = new JMenuItem(importImageAction);
+		mnTools.add(mntmImportImage);
+
 		contentPane = new JPanel();
 		contentPane.setBorder(new EmptyBorder(5, 5, 5, 5));
 		setContentPane(contentPane);
@@ -871,7 +1061,7 @@ public class TModExplorer extends JFrame
 										switch(suffix)
 										{
 											case ".rawimg":
-												RawImgViewer rawImgViewer = new RawImgViewer(target);
+												RawImgViewer rawImgViewer = new RawImgViewer(target, file.path);
 												rawImgViewer.setVisible(true);
 												break;
 											case ".dll":
