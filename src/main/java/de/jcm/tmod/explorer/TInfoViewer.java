@@ -69,10 +69,16 @@ public class TInfoViewer extends JFrame
 			{
 				LittleEndianDataOutputStream out = new LittleEndianDataOutputStream(new FileOutputStream(infoFile));
 
+				Object[] cache = new Object[data.length];
+				for(int i=0;i<cache.length;i++)
+				{
+					cache[i] = table.getModel().getValueAt(i, 1);
+				}
+
 				for(int i=0;i<4;i++)
 				{
-					String key = (String) data[i][1];
-					String value = (String) data[i][1];
+					String key = (String) data[i][0];
+					String value = (String) cache[i];
 
 					if(!value.isBlank())
 					{
@@ -80,27 +86,38 @@ public class TInfoViewer extends JFrame
 						NetworkHelper.writeVarString(out, value);
 					}
 				}
+				if(!textArea.getText().isBlank())
+				{
+					NetworkHelper.writeVarString(out, "description");
+					NetworkHelper.writeVarString(out, textArea.getText());
+				}
 
-				if((boolean)data[4][1])		//noCompile
+				if((boolean)cache[4])		//noCompile
 					NetworkHelper.writeVarString(out, (String)data[4][0]);
-				if(!(boolean)data[5][1])	//!hideCode
+				if(!(boolean)cache[5])		//!hideCode
 					NetworkHelper.writeVarString(out, "!"+(String)data[5][0]);
-				if(!(boolean)data[6][1])	//!hideResources
+				if(!(boolean)cache[6])		//!hideResources
 					NetworkHelper.writeVarString(out, "!"+(String)data[6][0]);
-				if((boolean)data[7][1])		//includeSource
+				if((boolean)cache[7])		//includeSource
 					NetworkHelper.writeVarString(out, (String)data[7][0]);
-				if((boolean)data[8][1])		//includePDB
+				if((boolean)cache[8])		//includePDB
 					NetworkHelper.writeVarString(out, (String)data[8][0]);
-				if((boolean)data[9][1])		//editAndContinue
+				if((boolean)cache[9])		//editAndContinue
 					NetworkHelper.writeVarString(out, (String)data[9][0]);
 
 				NetworkHelper.writeVarString(out, "side");
-				out.writeByte((int)data[10][1]);
+				out.writeByte((int)cache[10]);
 
-				if((boolean)data[11][1])	//beta
+				if((boolean)cache[11])	//beta
 					NetworkHelper.writeVarString(out, (String)data[11][0]);
 
 				out.close();
+
+				read();
+
+				//Refresh background colors
+				textArea.getListeners(CaretListener.class)[0].caretUpdate(null);
+				table.repaint();
 			}
 			catch(IOException e1)
 			{
@@ -109,7 +126,9 @@ public class TInfoViewer extends JFrame
 		}
 	};
 
-	private boolean isDirty(int row, Object value)
+
+
+	private JTextArea textArea;	private boolean isDirty(int row, Object value)
 	{
 		// System.out.println(row+" -> "+value+" = "+data[row][1]+" ->
 		// "+value.getClass()+" = "+data[row][1].getClass());
@@ -379,7 +398,7 @@ public class TInfoViewer extends JFrame
 		JScrollPane scrollPane = new JScrollPane();
 		panel_1.add(scrollPane);
 
-		JTextArea textArea = new JTextArea();
+		textArea = new JTextArea();
 		textArea.setRows(10);
 		textArea.setText(description);
 		Color bg = textArea.getBackground();
