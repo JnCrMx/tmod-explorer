@@ -37,7 +37,7 @@ public class ReOrderEditor extends JFrame
 
 	private final Color listBackground;
 
-	private final Action up1Action = new AbstractAction("1 Up")
+	private final Action up1Action = new AbstractAction("1 ↑")
 	{
 		private static final long serialVersionUID = 1L;
 
@@ -56,7 +56,7 @@ public class ReOrderEditor extends JFrame
 		}
 	};
 
-	private final Action up10Action = new AbstractAction("10 Up")
+	private final Action up10Action = new AbstractAction("10 ↑")
 	{
 		private static final long serialVersionUID = 1L;
 
@@ -93,7 +93,7 @@ public class ReOrderEditor extends JFrame
 		}
 	};
 
-	private final Action down1Action = new AbstractAction("1 Down")
+	private final Action down1Action = new AbstractAction("1 ↓")
 	{
 		private static final long serialVersionUID = 1L;
 
@@ -112,7 +112,7 @@ public class ReOrderEditor extends JFrame
 		}
 	};
 
-	private final Action down10Action = new AbstractAction("10 Down")
+	private final Action down10Action = new AbstractAction("10 ↓")
 	{
 		private static final long serialVersionUID = 1L;
 
