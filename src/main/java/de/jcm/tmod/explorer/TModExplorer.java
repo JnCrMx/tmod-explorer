@@ -87,7 +87,7 @@ public class TModExplorer extends JFrame
 	private int csize;
 	private int fcount;
 
-	private enum TState
+	public static enum TState
 	{
 		ORIGINAL,
 		ADDED,
@@ -95,7 +95,7 @@ public class TModExplorer extends JFrame
 		REMOVED
 	}
 
-	private class TFile
+	public static class TFile
 	{
 		public String path;
 		public int offset;
@@ -105,6 +105,7 @@ public class TModExplorer extends JFrame
 
 	public LinkedList<TFile> files = new LinkedList<>();
 	public boolean filesMoved		= false;
+	public boolean filesReOrdered	= false;
 
 	private HashMap<TFile, File> editFiles = new HashMap<>();
 	private JTextField tversionField;
@@ -522,7 +523,19 @@ public class TModExplorer extends JFrame
 			}
 		}
 	};
-	
+
+	private final Action reOrderFilesAction = new AbstractAction("ReOrder files...")
+	{
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public void actionPerformed(ActionEvent e)
+		{
+			ReOrderEditor reOrderEditor = new ReOrderEditor(TModExplorer.this);
+			reOrderEditor.setVisible(true);
+		}
+	};
+
 	/**
 	 * Launch the application.
 	 */
@@ -863,6 +876,9 @@ public class TModExplorer extends JFrame
 
 		JMenuItem mntmImportImage = new JMenuItem(importImageAction);
 		mnTools.add(mntmImportImage);
+
+		JMenuItem mntmReorderFiles = new JMenuItem(reOrderFilesAction);
+		mnTools.add(mntmReorderFiles);
 
 		contentPane = new JPanel();
 		contentPane.setBorder(new EmptyBorder(5, 5, 5, 5));
