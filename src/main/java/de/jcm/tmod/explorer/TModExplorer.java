@@ -49,6 +49,7 @@ import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
@@ -102,7 +103,8 @@ public class TModExplorer extends JFrame
 		public TState state;
 	}
 
-	private LinkedList<TFile> files = new LinkedList<>();
+	public LinkedList<TFile> files = new LinkedList<>();
+	public boolean filesMoved		= false;
 
 	private HashMap<TFile, File> editFiles = new HashMap<>();
 	private JTextField tversionField;
@@ -481,7 +483,46 @@ public class TModExplorer extends JFrame
 			}
 		}
 	};
+	private final Action moveFileAction = new AbstractAction("Move file...")
+	{
+		private static final long serialVersionUID = 1L;
 
+		@Override
+		public void actionPerformed(ActionEvent e)
+		{
+			if(tree.getSelectionPath() != null)
+			{
+				Stream<Object> treePath = Arrays.stream(tree.getSelectionPath().getPath());
+				String path = treePath.collect(Collector.of(() -> new StringBuilder(), (a, b) ->
+				{
+					if(!((DefaultMutableTreeNode) b).getUserObject().equals(modname))
+					{
+						if(((DefaultMutableTreeNode) b).getChildCount() == 0)
+							a.append(((DefaultMutableTreeNode) b).getUserObject());
+						else
+							a.append(((DefaultMutableTreeNode) b).getUserObject() + "/");
+					}
+				}, (a, b) -> a.append(b), StringBuilder::toString));
+				if(!path.isBlank())
+				{
+					Stream<TFile> files = TModExplorer.this.files.stream();
+					TFile file = files.reduce((a, b) -> b.path.equals(path) ? b : a)
+							.filter(f -> f != null && f.path.equals(path)).orElse(null);
+					if(file != null)
+					{
+						String newPath = JOptionPane.showInputDialog("Enter new path:", file.path);
+						if(newPath!=null)
+						{
+							file.path = newPath;
+							rebuildTree();
+							filesMoved = true;
+						}
+					}
+				}
+			}
+		}
+	};
+	
 	/**
 	 * Launch the application.
 	 */
@@ -813,6 +854,9 @@ public class TModExplorer extends JFrame
 
 		JMenuItem mntmRestoreFile = new JMenuItem(restoreFileAction);
 		mnEdit.add(mntmRestoreFile);
+
+		JMenuItem mntmMoveFile = new JMenuItem(moveFileAction);
+		mnEdit.add(mntmMoveFile);
 
 		JMenu mnTools = new JMenu("Tools");
 		menuBar.add(mnTools);
